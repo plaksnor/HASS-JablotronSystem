@@ -45,6 +45,8 @@ Here you can see new binary sensors incoming as soon you trigger them:
 - 00_02 is a wireless magnetic door sensor
 - 80_01 is another wireless magnetic door sensor
 
+![Binary sensors with specific device class](https://i.imgur.com/kz6k6i8.gif)
+
 Please ignore the 'binary_sensor.jablotron_door_sensor' sensor. This was the original binary_sensor catching all sensors, regardless the device type, name, id or state.
 
 **Pro's**: as a user you don't need to setup all sensors manually in configuration.yaml. The script will currently create new binary sensors as soon as it receives the right packets.
