@@ -34,8 +34,8 @@ Platforms will be shown on the http(s)://domainname<:8123>/states page.
 - The alarm control panel is always available.
 - Sensors will automatically be added as soon as they are triggered.
 - In the 'Settings' -> 'Customization' section of HA you'll be able to customize each sensor:
-  friendly_name : give it a human readable name
-  device_class  : give it a class with matches the device
+  - friendly_name : give it a human readable name
+  - device_class  : give it a class with matches the device
 
 ## Tested on
 - Home Assistant 0.94.0b3, installed in docker at RPi 3 model B+
@@ -66,4 +66,8 @@ Please ignore the 'binary_sensor.jablotron_door_sensor' sensor. This was the ori
 ## Todo list:
 - Retain discovered sensors in a configuration file and read this file as soon as HA starts.
 
+## Credits
+Big thanks to @mattsaxon!
+
 Work in progress. Any help would be great!
+
