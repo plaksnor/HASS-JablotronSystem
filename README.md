@@ -4,9 +4,10 @@ Jablotron component for Home Assistant
 
 
 
-Home Assistant component to read sensors as binary sensor.
+Home Assistant component to arm and disarm the alarm system and read sensor states.
 
 Currently supports:
+- alarm control panel, to arm and disarm the Jablotron alarm system
 - binary sensor, to monitor each Jablotron sensor
 
 ## Installation
@@ -16,6 +17,9 @@ Edit configuration.yaml and add the following lines:
 ```
 jablotron_system:
   port: /dev/hidraw0
+  code: 1234
+  code_arm_required: True
+  code_disarm_required: True
 ```
 
 Note: Because my serial cable presents as a HID device there format is /dev/hidraw[x], others that present as serial may be at /dev/ttyUSB0 or similar. Use the following command line to identity the appropriate device
@@ -25,10 +29,17 @@ $ dmesg | grep usb
 $ dmesg | grep hid
 ```
 
-## Debug
+## How it works
+Platforms will be shown on the http(s)://domainname<:8123>/states page.
+- The alarm control panel is always available.
+- Sensors will automatically be added as soon as they are triggered.
+- In the 'Settings' -> 'Customization' section of HA you'll be able to customize each sensor:
+  friendly_name : give it a human readable name
+  device_class  : give it a class with matches the device
 
-Since this is in full development, all debug lines are printed as INFO lines instead of DEBUG lines.
-As soon as there is a stable release, debug lines will be transformed into DEBUG lines.
+## Tested on
+- Home Assistant 0.94.0b3, installed in docker at RPi 3 model B+
+- Jablotron JA-101K-LAN, firmware: LJ60422, hardware: LJ16123
 
 ## Demo
 Here you'll see a working Jablotron PIR sensor as a binary_sensor:
@@ -36,7 +47,6 @@ Here you'll see a working Jablotron PIR sensor as a binary_sensor:
 ![Jablotron PIR sensor as binary_sensor in Home Assistant](https://i.imgur.com/nnUBorE.gif)
 
 As a user you don't want to define all your sensors one by one. And even if you would, how do know how to identify them?
-So currently the code is using hass.states.set() with an automatically generated entity_id "binary_sensor.jablotron_<device_id>" to keep track on devices which report a new state.
 
 ![Automatically add binary_sensor as soon as it changes state](https://i.imgur.com/GtJaDyC.gif)
 
@@ -54,7 +64,6 @@ Please ignore the 'binary_sensor.jablotron_door_sensor' sensor. This was the ori
 **Con's**: after a restart of HA, all your binary sensors are gone. Your history is still there, but sensors will be shown as soon as they report. Which could be never if you won't open all windows, doors, etc.
 
 ## Todo list:
-- add alarm control panel, to arm away, arm home and disarm the system. This is currently under development in another repo (https://github.com/mattsaxon/HASS-Jablotron80), but needs to be combined in a multi platform component.
-- optimized use of class JablotronSensor in binary_sensor.py
+- Retain discovered sensors in a configuration file and read this file as soon as HA starts.
 
 Work in progress. Any help would be great!
