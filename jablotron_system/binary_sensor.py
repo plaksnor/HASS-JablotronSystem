@@ -1,6 +1,7 @@
 """Jablotron Sensor platform"""
 import logging
 import binascii
+import sys
 import re
 import time
 import asyncio
@@ -156,7 +157,10 @@ class ReadPort():
         self._stop = threading.Event()
         self._data_flowing = threading.Event()
         self._async_add_entities = async_add_entities
-        
+
+        # default binary strings
+        self._old_bin_string = '0'.zfill(32)
+        self._new_bin_string = '0'.zfill(32)
 
         _LOGGER.info('Serial port: %s', format(self._file_path))
 
@@ -244,6 +248,14 @@ class ReadPort():
         finally:
             _LOGGER.info('exiting read_loop()' )
 
+    def _hextobin(self, hexstring):
+        dec = int.from_bytes(hexstring, byteorder=sys.byteorder) # turn to 'little' if sys.byteorder is wrong
+        bin_dec = bin(dec)
+        binstring = bin_dec[2:]
+        binstring = binstring.zfill(32)
+        revstring = binstring [::-1]
+        return revstring
+
     def _read(self):
         try:
             while True:
@@ -262,44 +274,125 @@ class ReadPort():
                 if packet[:1] == b'\x52': # sensor?
                     _LOGGER.info("Unknown packet 52 %s", str(binascii.hexlify(packet[0:6]), 'utf-8'))
 
-                elif packet[:2] == b'\x55\x08': # sensor?
-                    _LOGGER.info("Unknown packet 55 08 %s", str(binascii.hexlify(packet[0:6]), 'utf-8'))
+
+                elif packet[:2] == b'\xd8\x08':
+#                elif packet[:2] == b'\xd8\x08' and packet[10:12] == b'\x55\x09':
+#                    _LOGGER.info("Unknown #1 packet d8 08 ::: %s %s %s %s %s %s %s %s", str(binascii.hexlify(packet[0:1]), 'utf-8'), str(binascii.hexlify(packet[1:2]), 'utf-8'), str(binascii.hexlify(packet[2:3]), 'utf-8'), str(binascii.hexlify(packet[3:4]), 'utf-8'), str(binascii.hexlify(packet[4:5]), 'utf-8'), str(binascii.hexlify(packet[5:6]), 'utf-8'), str(binascii.hexlify(packet[6:7]), 'utf-8'), str(binascii.hexlify(packet[7:8]), 'utf-8'))
+#                    _LOGGER.info("Unknown #1              ::: %s %s %s %s %s %s %s %s", str(binascii.hexlify(packet[8:9]), 'utf-8'), str(binascii.hexlify(packet[9:10]), 'utf-8'), str(binascii.hexlify(packet[10:11]), 'utf-8'), str(binascii.hexlify(packet[11:12]), 'utf-8'), str(binascii.hexlify(packet[12:13]), 'utf-8'), str(binascii.hexlify(packet[13:14]), 'utf-8'), str(binascii.hexlify(packet[14:15]), 'utf-8'), str(binascii.hexlify(packet[15:16]), 'utf-8'))
  
-                elif packet[:2] == b'\x55\x09' or (packet[:2] == b'\xd8\x08' and packet[10:12] == b'\x55\x09'):
+#                elif packet[:2] == b'\xd8\x08': # sensor Marcel JA-101K
+
+                    _LOGGER.info("Unknown #2 packet d8 08 ::: %s %s %s %s %s %s %s %s", str(binascii.hexlify(packet[0:1]), 'utf-8'), str(binascii.hexlify(packet[1:2]), 'utf-8'), str(binascii.hexlify(packet[2:3]), 'utf-8'), str(binascii.hexlify(packet[3:4]), 'utf-8'), str(binascii.hexlify(packet[4:5]), 'utf-8'), str(binascii.hexlify(packet[5:6]), 'utf-8'), str(binascii.hexlify(packet[6:7]), 'utf-8'), str(binascii.hexlify(packet[7:8]), 'utf-8'))
+                    _LOGGER.info("Unknown #2              ::: %s %s %s %s %s %s %s %s", str(binascii.hexlify(packet[8:9]), 'utf-8'), str(binascii.hexlify(packet[9:10]), 'utf-8'), str(binascii.hexlify(packet[10:11]), 'utf-8'), str(binascii.hexlify(packet[11:12]), 'utf-8'), str(binascii.hexlify(packet[12:13]), 'utf-8'), str(binascii.hexlify(packet[13:14]), 'utf-8'), str(binascii.hexlify(packet[14:15]), 'utf-8'), str(binascii.hexlify(packet[15:16]), 'utf-8'))
+
+                    sensordata = packet
+
+                    byte3 = sensordata[2:3]  # 3rd byte unknown, always 00
+                    byte4 = sensordata[3:4]  # 4th byte, last part of id
+                    byte5 = sensordata[4:5]  # 5th byte, first part of id
+
+                    part = byte4+byte5
+
+                    # make a binary string of the new hex part string
+                    self._new_bin_string = self._hextobin(part)
+                    _LOGGER.info('new_bin_string: %s', self._new_bin_string)
+                    _LOGGER.info('old_bin_string: %s', self._old_bin_string)
+
+
+                    # ga nu vergelijken
+                    for i, (x, y) in enumerate(zip(self._old_bin_string, self._new_bin_string)):
+                        if x != y:
+                            _LOGGER.info('%s veranderd van %s naar %s', i, x, y)
+
+
+                            sensor_id = 'jablotron_' + str(i)
+                            entity_id = 'binary_sensor.' + sensor_id
+
+                            # Check if sensor is already known
+                            for dev in DEVICES:
+                                if dev.name == sensor_id:
+                                    binarysensor = dev
+                                    _LOGGER.info("Entity_id %s exists, now updating", entity_id)
+                                    break
+                            else:
+                                # create new entity if sensor doesn't exist
+                                _LOGGER.info("Entity_id %s doesn't exist, now creating", entity_id)
+                                binarysensor = JablotronSensor(self._hass, self._config, sensor_id)
+                                DEVICES.append(binarysensor)
+                                self._async_add_entities([binarysensor])
+
+                            # Set new state
+                            if y == '1':
+                                binarysensor._state = STATE_ON
+                            else:
+                                binarysensor._state = STATE_OFF
+                            _LOGGER.info('State updated to: %s', binarysensor._state)
+
+                            asyncio.run_coroutine_threadsafe(binarysensor._update(), self._hass.loop)                   
+
+
+                    
+                    # sla laatste bin string op als oude bin string
+                    self._old_bin_string = self._new_bin_string                    
+
+
+
+
+
+
+
+                     # iterate devices which are on
+#                    for i, position in enumerate(revstring):
+#                        print("pos: ", i, "state: ", position)
+#                        if position == '1':
+#                            print("ON")
+
+
+
+ 
+
+#                elif packet[:2] == b'\x55\x09' or (packet[:2] == b'\xd8\x08' and packet[10:12] == b'\x55\x09'):
+#                elif packet[:2] == b'\x55\x09':
+                elif 'a' == 'b':
+                    # sensor data
 
                     # offset is different when packet starts with d8 08
+                    # read 4 more bytes than needed for R&D
                     if packet[:2] == b'\x55\x09':
-                        sensordata = packet[0:6]
+                        sensordata = packet[0:10]
                     else:
-                        sensordata = packet[10:16]
+                        sensordata = packet[10:20]
 
                     # get info
-                    _devtyp = sensordata[2:3] # only 3rd byte
-                    _state  = sensordata[3:4] # only 4th byte
-                    _device = sensordata[4:6] # 5th and 6th byte
+                    _msgtype = sensordata[2:3]  # 3rd byte
+                    _state   = sensordata[3:4]  # only 4th byte
+                    _device  = sensordata[4:6]  # 5th and 6th byte
+                    _rest    = sensordata[6:10] # 7,8,9 and 10th byte
 
 
-                    # let's try to work only with STATE_ON, so the HA user should use device_class in order to decide if it's ON, OPENED or MOVING.
-                    if _state in (b'\x6d', b'\x75', b'\x79', b'\x7d', b'\x88', b'\x80'):
-                        _device_state = STATE_ON
-                    elif _state == b'\xa4':
-                        # some keepalive packet of a sensor which hasn't been on or off
-                        _device_state = STATE_OFF
+                    if _msgtype in (b'\x00', b'\x01'):
+                        if _state in (b'\x6d', b'\x75', b'\x79', b'\x7d', b'\x88', b'\x80'):
+                            _device_state = STATE_ON
+                        else:
+                            _device_state = STATE_OFF
+                    elif _msgtype == b'\x4f':
+                        _LOGGER.info("Unrecognized 55 09 4f packet: %s %s %s - %s", str(binascii.hexlify(_msgtype), 'utf-8'), str(binascii.hexlify(_state), 'utf-8'), str(binascii.hexlify(_device), 'utf-8'), str(binascii.hexlify(_rest), 'utf-8'))
                     else:
-                        _device_state = STATE_OFF
+                        _LOGGER.info("New unknown 55 09 packet: %s %s %s - %s", str(binascii.hexlify(_msgtype), 'utf-8'), str(binascii.hexlify(_state), 'utf-8'), str(binascii.hexlify(_device), 'utf-8'), str(binascii.hexlify(_rest), 'utf-8'))
+                    
 
 # Begin - This is all for debugging purposes, please ignore
-                    # not sure what the 3rd byte is yet, let's try this
-                    if _devtyp == b'\x00':
-                        devtyp = 'magnetic or PIR'            # seen with both wireless magnetic and PIR sensors
-                    elif _devtyp == b'\x01':
-                        devtyp = 'PIR with photo'             # only seen when activating wireless PIR with capture photo ability
-                    elif _devtyp in (b'\x0c', b'\x2e'):
-                        devtyp = 'Control panel'              # only seen when using wireless control panel
-                    elif _devtyp in b'\x4f':
-                        devtyp = 'unknown but recognized'     # we've seen this one before with several wireless magnetic sensors, but no idea
+                    # not sure what the 3rd byte is yet. 00=status, 01=
+                    if _msgtype == b'\x00':
+                        msgtype = 'magnetic or PIR'            # seen with both wireless magnetic and PIR sensors
+                    elif _msgtype == b'\x01':
+                        msgtype = 'PIR with photo'             # only seen when activating wireless PIR with capture photo ability
+                    elif _msgtype in (b'\x0c', b'\x2e'):
+                        msgtype = 'Control panel'              # only seen when using wireless control panel
+                    elif _msgtype in b'\x4f':
+                        msgtype = 'unknown but recognized'     # we've seen this one before with several wireless magnetic sensors, but no idea
                     else:
-                        devtyp = 'unknown and unrecognized'   # never seen this before
+                        msgtype = 'unknown and unrecognized'   # never seen this before
 
                     # Currently not doing anything with this info, only for debugging purposes
                     if _device == b'\x00\x02':
@@ -319,8 +412,8 @@ class ReadPort():
                     else:
                         device = 'unknown'
 
-                    _LOGGER.info("Sensor changed: 55 09 packet info: %s %s %s", str(binascii.hexlify(_devtyp), 'utf-8'), str(binascii.hexlify(_state), 'utf-8'), str(binascii.hexlify(_device), 'utf-8'))
-                    _LOGGER.info("Sensor changed: resolves to: devtyp: %s, state: %s, device: %s", devtyp, _device_state, device)
+                    _LOGGER.info("Sensor changed: 55 09 packet info: %s %s %s - %s", str(binascii.hexlify(_msgtype), 'utf-8'), str(binascii.hexlify(_state), 'utf-8'), str(binascii.hexlify(_device), 'utf-8'), str(binascii.hexlify(_rest), 'utf-8'))
+                    _LOGGER.info("Sensor changed: resolves to: msgtype: %s, state: %s, device: %s", msgtype, _device_state, device)
 #                    self._write_config_file(str(binascii.hexlify(packet), 'utf-8'))
 # End - This is all for debugging purposes, please ignore
 
