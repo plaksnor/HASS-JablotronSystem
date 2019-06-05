@@ -15,10 +15,11 @@ DEFAULT_NAME = 'Jablotron Alarm'
 CONF_CODE_ARM_REQUIRED = 'code_arm_required'
 CONF_CODE_DISARM_REQUIRED = 'code_disarm_required'
 
+# code required, since binary_sensor is using code to get 55 packets send
 CONFIG_SCHEMA = vol.Schema({
     DOMAIN: vol.Schema({
         vol.Required(CONF_PORT, default=DEFAULT_PORT): cv.string,
-        vol.Optional(CONF_CODE): cv.string,
+        vol.Required(CONF_CODE): cv.string,
         vol.Optional(CONF_CODE_ARM_REQUIRED, default=False): cv.boolean,
         vol.Optional(CONF_CODE_DISARM_REQUIRED, default=True): cv.boolean,
         vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string

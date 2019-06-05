@@ -41,8 +41,6 @@ async def async_setup_platform(hass: HomeAssistantType, config: ConfigType, asyn
 
 
 
-
-
 class JablotronSensor(BinarySensorDevice):
     """Representation of a Sensor."""
 
@@ -58,7 +56,6 @@ class JablotronSensor(BinarySensorDevice):
         self._lock = threading.BoundedSemaphore()
         self._stop = threading.Event()
         self._data_flowing = threading.Event()
-        
 
         try:
             hass.bus.async_listen('homeassistant_stop', self.shutdown_threads)
@@ -127,17 +124,6 @@ class JablotronSensor(BinarySensorDevice):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 class ReadPort():
     """ Read configuration and serial port """
 
@@ -158,25 +144,55 @@ class ReadPort():
         self._data_flowing = threading.Event()
         self._async_add_entities = async_add_entities
 
-        # default binary strings
+        # default binary strings for comparing states in d8 packets
         self._old_bin_string = '0'.zfill(32)
         self._new_bin_string = '0'.zfill(32)
 
         _LOGGER.info('Serial port: %s', format(self._file_path))
 
         try:
+          
+            switcher = {
+                "0": b'\x30',
+                "1": b'\x31',
+                "2": b'\x32',
+                "3": b'\x33',
+                "4": b'\x34',
+                "5": b'\x35',
+                "6": b'\x36',
+                "7": b'\x37',
+                "8": b'\x38',
+                "9": b'\x39'
+            }
+
+            # generating activation packet            
+            packet_code = b''
+            for c in hass.data[DOMAIN]['code']:
+                packet_code = packet_code + switcher.get(c)
+
+            _LOGGER.info('Activating 55 packets')
+            activationpacket = b'\x80\x08\x03\x39\x39\x39' + packet_code
+            
+            _LOGGER.info('Send activation packet 80 08 03 39 39 39 <code>')
+            _LOGGER.info('Send packet 52 02 13 05 9A')
+            self._sendPacket(activationpacket) # packet with code to activate 55 packets
+            self._sendPacket(b'\x52\x02\x13\x05\x9A')                     # activating 55 packets
+
             hass.bus.async_listen('homeassistant_stop', self.shutdown_threads)
 
             from concurrent.futures import ThreadPoolExecutor
             self._io_pool_exc = ThreadPoolExecutor(max_workers=5)
             self._read_loop_future = self._io_pool_exc.submit(self._read_loop)
-            self._watcher_loop_future = self._io_pool_exc.submit(self._watcher_loop)
-            self._io_pool_exc.submit(self._startup_message)
+            self._watcher_loop_80_future = self._io_pool_exc.submit(self._watcher_loop_80)
+            self._watcher_loop_52_future = self._io_pool_exc.submit(self._watcher_loop_52)
+            self._io_pool_exc.submit(self._startup_message_80)
+            self._io_pool_exc.submit(self._startup_message_52)
 
         except Exception as ex:
             _LOGGER.error('Unexpected error 1: %s', format(ex) )
 
 
+# not in use yet
     def _write_config_file(self, msg):
         _LOGGER.info("%s: Writing jablotron config to file: %s", self.name, self._config_path)
 
@@ -218,12 +234,19 @@ class ReadPort():
     async def _update(self):
             self.async_schedule_update_ha_state()
 
-    def _watcher_loop(self):
+    def _watcher_loop_80(self):
         while not self._stop.is_set():
-            if not self._data_flowing.wait(1):
-                self._startup_message()
+            if not self._data_flowing.wait(0.5):
+                self._startup_message_80()
             else:
-                time.sleep(0.5)
+                time.sleep(1)
+
+    def _watcher_loop_52(self):
+        while not self._stop.is_set():
+            if not self._data_flowing.wait(0.5):
+                self._startup_message_52()
+            else:
+                time.sleep(30)
 
     def _read_loop(self):
         try:
@@ -240,7 +263,7 @@ class ReadPort():
 
                 self._f.close()
 #                self._lock.release()
-                time.sleep(1)
+                time.sleep(0.5)
 
         except Exception as ex:
             _LOGGER.error('Unexpected error 2: %s', format(ex) )
@@ -271,89 +294,14 @@ class ReadPort():
 
                 self._available = True
 
-                if packet[:1] == b'\x52': # sensor?
-                    _LOGGER.info("Unknown packet 52 %s", str(binascii.hexlify(packet[0:6]), 'utf-8'))
+#                if packet[:1] == b'\x52': # sensor?
+#                    _LOGGER.info("Unknown packet 52 %s", str(binascii.hexlify(packet[0:6]), 'utf-8'))
 
 
-                elif packet[:2] == b'\xd8\x08':
-#                elif packet[:2] == b'\xd8\x08' and packet[10:12] == b'\x55\x09':
-#                    _LOGGER.info("Unknown #1 packet d8 08 ::: %s %s %s %s %s %s %s %s", str(binascii.hexlify(packet[0:1]), 'utf-8'), str(binascii.hexlify(packet[1:2]), 'utf-8'), str(binascii.hexlify(packet[2:3]), 'utf-8'), str(binascii.hexlify(packet[3:4]), 'utf-8'), str(binascii.hexlify(packet[4:5]), 'utf-8'), str(binascii.hexlify(packet[5:6]), 'utf-8'), str(binascii.hexlify(packet[6:7]), 'utf-8'), str(binascii.hexlify(packet[7:8]), 'utf-8'))
-#                    _LOGGER.info("Unknown #1              ::: %s %s %s %s %s %s %s %s", str(binascii.hexlify(packet[8:9]), 'utf-8'), str(binascii.hexlify(packet[9:10]), 'utf-8'), str(binascii.hexlify(packet[10:11]), 'utf-8'), str(binascii.hexlify(packet[11:12]), 'utf-8'), str(binascii.hexlify(packet[12:13]), 'utf-8'), str(binascii.hexlify(packet[13:14]), 'utf-8'), str(binascii.hexlify(packet[14:15]), 'utf-8'), str(binascii.hexlify(packet[15:16]), 'utf-8'))
- 
-#                elif packet[:2] == b'\xd8\x08': # sensor Marcel JA-101K
-
-                    _LOGGER.info("Unknown #2 packet d8 08 ::: %s %s %s %s %s %s %s %s", str(binascii.hexlify(packet[0:1]), 'utf-8'), str(binascii.hexlify(packet[1:2]), 'utf-8'), str(binascii.hexlify(packet[2:3]), 'utf-8'), str(binascii.hexlify(packet[3:4]), 'utf-8'), str(binascii.hexlify(packet[4:5]), 'utf-8'), str(binascii.hexlify(packet[5:6]), 'utf-8'), str(binascii.hexlify(packet[6:7]), 'utf-8'), str(binascii.hexlify(packet[7:8]), 'utf-8'))
-                    _LOGGER.info("Unknown #2              ::: %s %s %s %s %s %s %s %s", str(binascii.hexlify(packet[8:9]), 'utf-8'), str(binascii.hexlify(packet[9:10]), 'utf-8'), str(binascii.hexlify(packet[10:11]), 'utf-8'), str(binascii.hexlify(packet[11:12]), 'utf-8'), str(binascii.hexlify(packet[12:13]), 'utf-8'), str(binascii.hexlify(packet[13:14]), 'utf-8'), str(binascii.hexlify(packet[14:15]), 'utf-8'), str(binascii.hexlify(packet[15:16]), 'utf-8'))
-
-                    sensordata = packet
-
-                    byte3 = sensordata[2:3]  # 3rd byte unknown, always 00
-                    byte4 = sensordata[3:4]  # 4th byte, last part of id
-                    byte5 = sensordata[4:5]  # 5th byte, first part of id
-
-                    part = byte4+byte5
-
-                    # make a binary string of the new hex part string
-                    self._new_bin_string = self._hextobin(part)
-                    _LOGGER.info('new_bin_string: %s', self._new_bin_string)
-                    _LOGGER.info('old_bin_string: %s', self._old_bin_string)
-
-
-                    # ga nu vergelijken
-                    for i, (x, y) in enumerate(zip(self._old_bin_string, self._new_bin_string)):
-                        if x != y:
-                            _LOGGER.info('%s veranderd van %s naar %s', i, x, y)
-
-
-                            sensor_id = 'jablotron_' + str(i)
-                            entity_id = 'binary_sensor.' + sensor_id
-
-                            # Check if sensor is already known
-                            for dev in DEVICES:
-                                if dev.name == sensor_id:
-                                    binarysensor = dev
-                                    _LOGGER.info("Entity_id %s exists, now updating", entity_id)
-                                    break
-                            else:
-                                # create new entity if sensor doesn't exist
-                                _LOGGER.info("Entity_id %s doesn't exist, now creating", entity_id)
-                                binarysensor = JablotronSensor(self._hass, self._config, sensor_id)
-                                DEVICES.append(binarysensor)
-                                self._async_add_entities([binarysensor])
-
-                            # Set new state
-                            if y == '1':
-                                binarysensor._state = STATE_ON
-                            else:
-                                binarysensor._state = STATE_OFF
-                            _LOGGER.info('State updated to: %s', binarysensor._state)
-
-                            asyncio.run_coroutine_threadsafe(binarysensor._update(), self._hass.loop)                   
-
-
-                    
-                    # sla laatste bin string op als oude bin string
-                    self._old_bin_string = self._new_bin_string                    
-
-
-
-
-
-
-
-                     # iterate devices which are on
-#                    for i, position in enumerate(revstring):
-#                        print("pos: ", i, "state: ", position)
-#                        if position == '1':
-#                            print("ON")
-
-
-
- 
 
 #                elif packet[:2] == b'\x55\x09' or (packet[:2] == b'\xd8\x08' and packet[10:12] == b'\x55\x09'):
-#                elif packet[:2] == b'\x55\x09':
-                elif 'a' == 'b':
+                if packet[:2] == b'\x55\x09':
+#                elif 'a' == 'b':
                     # sensor data
 
                     # offset is different when packet starts with d8 08
@@ -412,8 +360,8 @@ class ReadPort():
                     else:
                         device = 'unknown'
 
-                    _LOGGER.info("Sensor changed: 55 09 packet info: %s %s %s - %s", str(binascii.hexlify(_msgtype), 'utf-8'), str(binascii.hexlify(_state), 'utf-8'), str(binascii.hexlify(_device), 'utf-8'), str(binascii.hexlify(_rest), 'utf-8'))
-                    _LOGGER.info("Sensor changed: resolves to: msgtype: %s, state: %s, device: %s", msgtype, _device_state, device)
+                    _LOGGER.debug("Sensor changed: 55 09 packet info: %s %s %s - %s", str(binascii.hexlify(_msgtype), 'utf-8'), str(binascii.hexlify(_state), 'utf-8'), str(binascii.hexlify(_device), 'utf-8'), str(binascii.hexlify(_rest), 'utf-8'))
+                    _LOGGER.debug("Sensor changed: resolves to: msgtype: %s, state: %s, device: %s", msgtype, _device_state, device)
 #                    self._write_config_file(str(binascii.hexlify(packet), 'utf-8'))
 # End - This is all for debugging purposes, please ignore
 
@@ -424,7 +372,6 @@ class ReadPort():
                     n = 2
                     x = ''
                     for i in range(0, len(s), n):
-# Sensors                       
 #                        x = x + s[i:i+n] + ' '
                         x = x + s[i:i+n]
 #                    dev_packet = x.strip().replace(' ', '_')
@@ -437,18 +384,20 @@ class ReadPort():
                     for dev in DEVICES:
                         if dev.name == sensor_id:
                             binarysensor = dev
-                            _LOGGER.info("Entity_id %s exists, now updating", entity_id)
+                            _LOGGER.debug("Entity_id %s exists, now updating", entity_id)
                             break
                     else:
                         # create new entity if sensor doesn't exist
-                        _LOGGER.info("Entity_id %s doesn't exist, now creating", entity_id)
+                        _LOGGER.debug("Entity_id %s doesn't exist, now creating", entity_id)
                         binarysensor = JablotronSensor(self._hass, self._config, sensor_id)
                         DEVICES.append(binarysensor)
                         self._async_add_entities([binarysensor])
 
                     # Set new state
                     binarysensor._state = _device_state
-                    _LOGGER.info('State updated to: %s', _device_state)
+                    _LOGGER.info('State %s updated to: %s', entity_id, _device_state)
+                    
+                    # update sensor state
                     asyncio.run_coroutine_threadsafe(binarysensor._update(), self._hass.loop)                   
 
                     # Set PIR states to STATE_OFF after 10 sec
@@ -456,15 +405,72 @@ class ReadPort():
                         time.sleep(10)
                         binarysensor._state = STATE_OFF
 #                        _LOGGER.info('_state updated: %s', _device_state)
-                        _LOGGER.info('State updated to: %s', binarysensor._state)
-                        
+                        _LOGGER.info('State %s updated to: %s', entity_id, binarysensor._state)
+
+                        # update sensor state
                         asyncio.run_coroutine_threadsafe(binarysensor._update(), self._hass.loop)                   
                     pass
 
+                elif packet[:2] == b'\xd8\x08':
+#                elif packet[:2] == b'\xd8\x08' and packet[10:12] == b'\x55\x09':
+#                    _LOGGER.info("Unknown #1 packet d8 08 ::: %s %s %s %s %s %s %s %s", str(binascii.hexlify(packet[0:1]), 'utf-8'), str(binascii.hexlify(packet[1:2]), 'utf-8'), str(binascii.hexlify(packet[2:3]), 'utf-8'), str(binascii.hexlify(packet[3:4]), 'utf-8'), str(binascii.hexlify(packet[4:5]), 'utf-8'), str(binascii.hexlify(packet[5:6]), 'utf-8'), str(binascii.hexlify(packet[6:7]), 'utf-8'), str(binascii.hexlify(packet[7:8]), 'utf-8'))
+#                    _LOGGER.info("Unknown #1              ::: %s %s %s %s %s %s %s %s", str(binascii.hexlify(packet[8:9]), 'utf-8'), str(binascii.hexlify(packet[9:10]), 'utf-8'), str(binascii.hexlify(packet[10:11]), 'utf-8'), str(binascii.hexlify(packet[11:12]), 'utf-8'), str(binascii.hexlify(packet[12:13]), 'utf-8'), str(binascii.hexlify(packet[13:14]), 'utf-8'), str(binascii.hexlify(packet[14:15]), 'utf-8'), str(binascii.hexlify(packet[15:16]), 'utf-8'))
+ 
+                    _LOGGER.debug("d8 08 packet byte 1-8  ::: %s %s %s %s %s %s %s %s", str(binascii.hexlify(packet[0:1]), 'utf-8'), str(binascii.hexlify(packet[1:2]), 'utf-8'), str(binascii.hexlify(packet[2:3]), 'utf-8'), str(binascii.hexlify(packet[3:4]), 'utf-8'), str(binascii.hexlify(packet[4:5]), 'utf-8'), str(binascii.hexlify(packet[5:6]), 'utf-8'), str(binascii.hexlify(packet[6:7]), 'utf-8'), str(binascii.hexlify(packet[7:8]), 'utf-8'))
+                    _LOGGER.debug("             byte 9-16 ::: %s %s %s %s %s %s %s %s", str(binascii.hexlify(packet[8:9]), 'utf-8'), str(binascii.hexlify(packet[9:10]), 'utf-8'), str(binascii.hexlify(packet[10:11]), 'utf-8'), str(binascii.hexlify(packet[11:12]), 'utf-8'), str(binascii.hexlify(packet[12:13]), 'utf-8'), str(binascii.hexlify(packet[13:14]), 'utf-8'), str(binascii.hexlify(packet[14:15]), 'utf-8'), str(binascii.hexlify(packet[15:16]), 'utf-8'))
+
+                    byte3 = packet[2:3]  # 3rd byte unknown, always 00
+                    byte4 = packet[3:4]  # 4th byte, last part of id
+                    byte5 = packet[4:5]  # 5th byte, first part of id
+
+                    part = byte4+byte5
+
+                    # make a binary string of the new hex part string
+                    self._new_bin_string = self._hextobin(part)
+                    _LOGGER.debug('old_bin_string: %s', self._old_bin_string)
+                    _LOGGER.debug('new_bin_string: %s', self._new_bin_string)
+
+
+                    # ga nu vergelijken
+                    for i, (x, y) in enumerate(zip(self._old_bin_string, self._new_bin_string)):
+                        if x != y:
+                            _LOGGER.debug('%s changed from %s to %s', i, x, y)
+
+
+                            sensor_id = 'jablotron_' + str(i)
+                            entity_id = 'binary_sensor.' + sensor_id
+
+                            # Check if sensor is already known
+                            for dev in DEVICES:
+                                if dev.name == sensor_id:
+                                    binarysensor = dev
+                                    _LOGGER.debug("Entity_id %s exists, now updating", entity_id)
+                                    break
+                            else:
+                                # create new entity if sensor doesn't exist
+                                _LOGGER.debug("Entity_id %s doesn't exist, now creating", entity_id)
+                                binarysensor = JablotronSensor(self._hass, self._config, sensor_id)
+                                DEVICES.append(binarysensor)
+                                self._async_add_entities([binarysensor])
+
+                            # Set new state
+                            if y == '1':
+                                binarysensor._state = STATE_ON
+                            else:
+                                binarysensor._state = STATE_OFF
+                            _LOGGER.info('State %s updated to: %s', entity_id, binarysensor._state)
+
+                            # update sensor state
+                            asyncio.run_coroutine_threadsafe(binarysensor._update(), self._hass.loop)                   
+                    
+                    # save last binary string as old binary string
+                    self._old_bin_string = self._new_bin_string                    
+
+                    pass
+ 
 #                else:
 #                    _LOGGER.info("Unknown packet: %s", packet)
 #                    self._stop.set()
-
 
         except (IndexError, FileNotFoundError, IsADirectoryError, UnboundLocalError, OSError):
             _LOGGER.warning("File or data not present at the moment: %s", self._file_path)
@@ -482,12 +488,31 @@ class ReadPort():
         time.sleep(0.1) # lower reliability without this delay
         f.close()
 
-    def _startup_message(self):
+    def _startup_message_52(self):
+        """ Send Start Message to system"""
+
+#        try:
+#            self._lock.acquire()
+
+        self._sendPacket(b'\x52\x02\x13\x05\x9A')             # Get states of sensors
+        _LOGGER.debug('Send packet 52 02 13 05 9A')
+
+    def _startup_message_80(self):
         """ Send Start Message to system"""
 
 #        try:
 #            self._lock.acquire()
         self._sendPacket(b'\x80\x01\x02')             # Get states of sensors
+        _LOGGER.debug('Send packet 80 01 02')
+
+#        self._sendPacket(b'\x80\x01\x0f')             # Get states of sensors
+#        self._sendPacket(b'\x80\x01\x04')             # Get states of sensors
+#        self._sendPacket(b'\x52\x02\x13\x05\x9a')             # Get states of sensors
+
+#        self._sendPacket(b'\x52\x01\x02')             # Get states of sensors
+#        _LOGGER.info('Send packet 52 01 02')
+        
+#        time.sleep(0.1) # lower reliability without this delay
 
 #        finally:
 #            self._lock.release()
