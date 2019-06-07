@@ -9,7 +9,7 @@ _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = 'jablotron_system'
 
-DEFAULT_PORT = '/dev/hidraw'
+DEFAULT_PORT = '/dev/hidraw0'
 DEFAULT_NAME = 'Jablotron Alarm'
 
 CONF_CODE_ARM_REQUIRED = 'code_arm_required'

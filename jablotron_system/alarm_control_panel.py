@@ -118,7 +118,7 @@ class JablotronAlarm(alarm.AlarmControlPanel):
         while not self._stop.is_set():
             
             if not self._data_flowing.wait(1):
-                _LOGGER.debug("Data has not been received for 4 seconds, retry startup message")
+                _LOGGER.debug("Data has not been received for 1 seconds, retry startup message")
                 self._startup_message()
             else:
                 _LOGGER.debug("Data is flowing, wait 1 seconds before checking again")
@@ -130,9 +130,9 @@ class JablotronAlarm(alarm.AlarmControlPanel):
 
             while not self._stop.is_set():
 
-                _LOGGER.debug("_read_loop: Acquiring lock...")
-                self._lock.acquire()
-                _LOGGER.debug("_read_loop: Lock aquired.")
+#                _LOGGER.debug("_read_loop: Acquiring lock...")
+#                self._lock.acquire()
+#                _LOGGER.debug("_read_loop: Lock aquired.")
 
                 self._f = open(self._file_path, 'rb', 64)
 
@@ -151,9 +151,9 @@ class JablotronAlarm(alarm.AlarmControlPanel):
                 self._f.close()
                 _LOGGER.debug("_read_loop: closed connection")
 
-                _LOGGER.debug("_read_loop: Releasing lock...")
-                self._lock.release()
-                _LOGGER.debug("_read_loop: Lock released.")
+#                _LOGGER.debug("_read_loop: Releasing lock...")
+#                self._lock.release()
+#                _LOGGER.debug("_read_loop: Lock released.")
 
                 time.sleep(1)
 
@@ -354,7 +354,7 @@ class JablotronAlarm(alarm.AlarmControlPanel):
 
         try:
             _LOGGER.debug("_sendKeys: Acquiring lock...")
-            self._lock.acquire()
+#            self._lock.acquire()
             _LOGGER.debug("_sendKeys: Lock acquired.")
 
             if self._model == 'Jablotron JA-80 Series':
@@ -403,7 +403,7 @@ class JablotronAlarm(alarm.AlarmControlPanel):
 
         finally:
             _LOGGER.debug("_sendKeys: Releasing lock...")
-            self._lock.release()
+#            self._lock.release()
             _LOGGER.debug("_sendKeys: Lock released.")
 
 
@@ -432,9 +432,11 @@ class JablotronAlarm(alarm.AlarmControlPanel):
                 _LOGGER.debug("_startup_message: Lock released.")
 
         elif self._model == 'Jablotron JA-100 Series':
-            _LOGGER.debug('Sending startup message')
-            self._sendPacket(b'\x80\x01\x01\x52\x01\x0E')
-            _LOGGER.debug('Successfully sent startup message')
+            # Don't send any startup message. The packets in binary_sensor.py seem to be good enough to get a quick response with the right state of the alarm.
+            pass
+#            _LOGGER.debug('Sending startup message')
+#            self._sendPacket(b'\x80\x01\x01\x52\x01\x0E')
+#            _LOGGER.debug('Successfully sent startup message')
 
         else:
             _LOGGER.debug('Sending startup message')
