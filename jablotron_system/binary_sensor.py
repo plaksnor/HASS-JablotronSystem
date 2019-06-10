@@ -155,6 +155,7 @@ class DeviceScanner():
         self.devices = {dev.dev_id: dev for dev in devices}
         self._is_updating = asyncio.Lock()
         self._activation_packet = b''
+        self._mode = 'd8'
 
         """ default binary strings for comparing states in d8 packets """
         self._old_bin_string = '0'.zfill(32)
@@ -357,7 +358,8 @@ class DeviceScanner():
                             """Only create or update a sensor when this packet is the first d8 08 packet received since startup,
                                or if d8 08 packet reports about 1 specific device (by containing a 55 09 packet) or,
                                or if a specific device is not active anymore (y == '0')"""
-                            if self._available == False or (y == '1' and packet[10:12] == b'\x55\x09') or y == '0':
+#                            if self._available == False or (y == '1' and packet[10:12] == b'\x55\x09') or y == '0':
+                            if self._mode == 'd8' or (self._mode == '55' and (self._available == False or (y == '1' and packet[10:12] == b'\x55\x09') or y == '0')):
 
                                 """ Create or update sensor """
                                 self._hass.add_job(
@@ -373,6 +375,10 @@ class DeviceScanner():
 
 
                 elif packet[:2] == b'\x55\x09':
+
+                    # it seems like we receive 55 packets, so let's start using a different algorithm for the whole code now
+                    _LOGGER.debug('PortScanner._read(): Upgrading to 55 mode')
+                    self._mode = '55'
 
                     _LOGGER.debug('PortScanner._read(): 55 09 packet, part 1: %s', str(binascii.hexlify(packet[0:8]), 'utf-8'))
                     _LOGGER.debug('PortScanner._read(): 55 09 packet, part 2: %s', str(binascii.hexlify(packet[8:16]), 'utf-8'))
@@ -445,7 +451,8 @@ class DeviceScanner():
     def _triggersensorupdate(self):
         """ Send trigger for sensor update to system"""
 
-        _LOGGER.debug('PortScanner._triggersensorupdate(): Send activation packet: %s', self._activation_packet)
+#        _LOGGER.debug('PortScanner._triggersensorupdate(): Send activation packet: %s', self._activation_packet)
+        _LOGGER.debug('PortScanner._triggersensorupdate(): Send activation packet: <blurred>')
         _LOGGER.debug('PortScanner._triggersensorupdate(): Send packet: 52 02 13 05 9a')
 
         self._sendPacket(self._activation_packet)
