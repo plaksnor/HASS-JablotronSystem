@@ -40,6 +40,11 @@
   5 and  6 = specific sensor ID of sensor which has changed state
 
  -----------------------------------------------------------------------------------
+
+ Recent discoveries
+ 55 08 = wired    (unconfirmed)
+ 55 09 = wireless (unconfirmed)
+
 """
 
 import logging
@@ -356,10 +361,11 @@ class DeviceScanner():
                                 _device_state = STATE_OFF
 
                             """Only create or update a sensor when this packet is the first d8 08 packet received since startup,
-                               or if d8 08 packet reports about 1 specific device (by containing a 55 09 packet) or,
+                               or if d8 08 packet reports about 1 specific device (by containing a 55 packet) or,
                                or if a specific device is not active anymore (y == '0')"""
 #                            if self._available == False or (y == '1' and packet[10:12] == b'\x55\x09') or y == '0':
-                            if self._mode == 'd8' or (self._mode == '55' and (self._available == False or (y == '1' and packet[10:12] == b'\x55\x09') or y == '0')):
+#                            if self._mode == 'd8' or (self._mode == '55' and (self._available == False or (y == '1' and packet[10:12] == b'\x55\x09') or y == '0')):
+                            if self._mode == 'd8' or (self._mode == '55' and (self._available == False or (y == '1' and packet[10:11] == b'\x55') or y == '0')):
 
                                 """ Create or update sensor """
                                 self._hass.add_job(
@@ -374,14 +380,15 @@ class DeviceScanner():
                     self._available = True
 
 
-                elif packet[:2] == b'\x55\x09':
+#                elif packet[:2] == b'\x55\x09':
+                elif packet[:2] in (b'\x55\x08', b'\x55\x09'):
 
                     # it seems like we receive 55 packets, so let's start using a different algorithm for the whole code now
                     _LOGGER.debug('PortScanner._read(): Upgrading to 55 mode')
                     self._mode = '55'
 
-                    _LOGGER.debug('PortScanner._read(): 55 09 packet, part 1: %s', str(binascii.hexlify(packet[0:8]), 'utf-8'))
-                    _LOGGER.debug('PortScanner._read(): 55 09 packet, part 2: %s', str(binascii.hexlify(packet[8:16]), 'utf-8'))
+                    _LOGGER.debug('PortScanner._read(): %s packet, part 1: %s', str(binascii.hexlify(packet[0:2]), 'utf-8'), str(binascii.hexlify(packet[0:8]), 'utf-8'))
+                    _LOGGER.debug('PortScanner._read(): %s packet, part 2: %s', str(binascii.hexlify(packet[0:2]), 'utf-8'), str(binascii.hexlify(packet[8:16]), 'utf-8'))
 
                     packetpart = packet[0:10]
 
@@ -411,21 +418,21 @@ class DeviceScanner():
                         
                     elif byte3 == b'\x0c':
                         # we don't know yet. Must be some keep alive packet from a sensor who hasn't been triggered in a loooong time
-                        _LOGGER.debug("Unrecognized 55 09 0c packet: %s %s %s %s", str(binascii.hexlify(byte3), 'utf-8'), str(binascii.hexlify(byte4), 'utf-8'), str(binascii.hexlify(byte5), 'utf-8'), str(binascii.hexlify(byte6), 'utf-8'))
+                        _LOGGER.debug("Unrecognized %s 0c packet: %s %s %s %s", str(binascii.hexlify(packet[0:2]), 'utf-8'), str(binascii.hexlify(byte3), 'utf-8'), str(binascii.hexlify(byte4), 'utf-8'), str(binascii.hexlify(byte5), 'utf-8'), str(binascii.hexlify(byte6), 'utf-8'))
                         _LOGGER.debug("Probably Control Panel OFF?")
 
                     elif byte3 == b'\x2e':
                         # we don't know yet. Must be some keep alive packet from a sensor who hasn't been triggered in a loooong time
-                        _LOGGER.debug("Unrecognized 55 09 2e packet: %s %s %s %s", str(binascii.hexlify(byte3), 'utf-8'), str(binascii.hexlify(byte4), 'utf-8'), str(binascii.hexlify(byte5), 'utf-8'), str(binascii.hexlify(byte6), 'utf-8'))
+                        _LOGGER.debug("Unrecognized %s 2e packet: %s %s %s %s", str(binascii.hexlify(packet[0:2]), 'utf-8'), str(binascii.hexlify(byte3), 'utf-8'), str(binascii.hexlify(byte4), 'utf-8'), str(binascii.hexlify(byte5), 'utf-8'), str(binascii.hexlify(byte6), 'utf-8'))
                         _LOGGER.debug("Probably Control Panel ON?")
 
                     elif byte3 == b'\x4f':
                         # we don't know yet. Must be some keep alive packet from a sensor who hasn't been triggered in a loooong time
-                        _LOGGER.debug("Unrecognized 55 09 4f packet: %s %s %s %s", str(binascii.hexlify(byte3), 'utf-8'), str(binascii.hexlify(byte4), 'utf-8'), str(binascii.hexlify(byte5), 'utf-8'), str(binascii.hexlify(byte6), 'utf-8'))
+                        _LOGGER.debug("Unrecognized %s 4f packet: %s %s %s %s", str(binascii.hexlify(packet[0:2]), 'utf-8'), str(binascii.hexlify(byte3), 'utf-8'), str(binascii.hexlify(byte4), 'utf-8'), str(binascii.hexlify(byte5), 'utf-8'), str(binascii.hexlify(byte6), 'utf-8'))
                         _LOGGER.debug("Probably some keep alive packet from a sensor which hasn't been triggered recently")
 
                     else:
-                        _LOGGER.debug("New unknown 55 09 packet: %s %s %s %s", str(binascii.hexlify(byte3), 'utf-8'), str(binascii.hexlify(byte4), 'utf-8'), str(binascii.hexlify(byte5), 'utf-8'), str(binascii.hexlify(byte6), 'utf-8'))
+                        _LOGGER.debug("New unknown %s packet: %s %s %s %s", str(binascii.hexlify(packet[0:2]), 'utf-8'), str(binascii.hexlify(byte3), 'utf-8'), str(binascii.hexlify(byte4), 'utf-8'), str(binascii.hexlify(byte5), 'utf-8'), str(binascii.hexlify(byte6), 'utf-8'))
 
                 else:
                     pass
