@@ -399,7 +399,7 @@ class DeviceScanner():
 
                     """Only process specific state changes"""
                     if byte3 in (b'\x00', b'\x01'):
-                        if byte4 in (b'\x6d', b'\x75', b'\x79', b'\x7d', b'\x88', b'\x80'):
+                        if byte4 in (b'\x6d', b'\x75', b'\x79', b'\x7d', b'\x88', b'\x80', b'\x8c'):
                             _device_state = STATE_ON
                         else:
                             _device_state = STATE_OFF
