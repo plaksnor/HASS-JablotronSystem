@@ -381,11 +381,10 @@ class DeviceScanner():
 
 
 #                elif packet[:2] == b'\x55\x09':
-                elif packet[:2] in (b'\x55\x08', b'\x55\x09'):
+                elif self._mode == '55' and packet[:2] in (b'\x55\x08', b'\x55\x09'):
 
                     # it seems like we receive 55 packets, so let's start using a different algorithm for the whole code now
                     _LOGGER.debug('PortScanner._read(): Upgrading to 55 mode')
-                    self._mode = '55'
 
                     _LOGGER.debug('PortScanner._read(): %s packet, part 1: %s', str(binascii.hexlify(packet[0:2]), 'utf-8'), str(binascii.hexlify(packet[0:8]), 'utf-8'))
                     _LOGGER.debug('PortScanner._read(): %s packet, part 2: %s', str(binascii.hexlify(packet[0:2]), 'utf-8'), str(binascii.hexlify(packet[8:16]), 'utf-8'))
