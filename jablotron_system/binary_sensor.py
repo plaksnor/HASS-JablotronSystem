@@ -160,7 +160,7 @@ class DeviceScanner():
         self.devices = {dev.dev_id: dev for dev in devices}
         self._is_updating = asyncio.Lock()
         self._activation_packet = b''
-        self._mode = 'd8'
+        self._mode = '55'
 
         """ default binary strings for comparing states in d8 packets """
         self._old_bin_string = '0'.zfill(32)
@@ -226,7 +226,7 @@ class DeviceScanner():
 #            self.async_schedule_update_ha_state()
 
     def _watcher_loop_keepalive(self):
-        """Trigger keepalive message to get d8 09 packets."""
+        """Trigger keepalive message to get d8 08 packets."""
         while not self._stop.is_set():
             if not self._data_flowing.wait(0.5):
                 self._keepalive()
@@ -277,22 +277,20 @@ class DeviceScanner():
         dev_id = cv.slug(str(dev_id).lower())
         device = self.devices.get(dev_id)
 
+        """State received of already known device"""
         if device:
-            _LOGGER.debug('DeviceScanner.async_see(): state received from already known sensor %s with state %s', dev_id, state)
             await device.async_seen(state)
-#            if device.track:
             await device.async_update_ha_state()
             return
 
-        _LOGGER.info("DeviceScanner.async_see(): state received from unrecognized sensor %s with state %s", dev_id, state)
-        # If no device can be found, create it
+        """State received of unknown device"""
         dev_id = util.ensure_unique_string(dev_id, self.devices.keys())
         device = JablotronSensor(self._hass, dev_id)
         self.devices[dev_id] = device
 
         await device.async_seen(state)
 
-        # update known_devices.yaml
+        """Update known_devices.yaml"""
         self._hass.async_create_task(
             self.async_update_config(
                 self._hass.config.path(YAML_DEVICES), dev_id, device)
@@ -380,12 +378,7 @@ class DeviceScanner():
                     self._available = True
 
 
-#                elif packet[:2] == b'\x55\x09':
-                elif packet[:2] in (b'\x55\x08', b'\x55\x09'):
-
-                    # it seems like we receive 55 packets, so let's start using a different algorithm for the whole code now
-                    _LOGGER.debug('PortScanner._read(): Upgrading to 55 mode')
-                    self._mode = '55'
+                elif self._mode == '55' and packet[:2] in (b'\x55\x08', b'\x55\x09'):
 
                     _LOGGER.debug('PortScanner._read(): %s packet, part 1: %s', str(binascii.hexlify(packet[0:2]), 'utf-8'), str(binascii.hexlify(packet[0:8]), 'utf-8'))
                     _LOGGER.debug('PortScanner._read(): %s packet, part 2: %s', str(binascii.hexlify(packet[0:2]), 'utf-8'), str(binascii.hexlify(packet[8:16]), 'utf-8'))
@@ -418,7 +411,7 @@ class DeviceScanner():
                         self._hass.add_job(
                             self.async_see(dev_id, _device_state)
                         )
-                        
+
                     elif byte3 == b'\x0c':
                         # we don't know yet. Must be some keep alive packet from a sensor who hasn't been triggered in a loooong time
                         _LOGGER.debug("Unrecognized %s 0c packet: %s %s %s %s", str(binascii.hexlify(packet[0:2]), 'utf-8'), str(binascii.hexlify(byte3), 'utf-8'), str(binascii.hexlify(byte4), 'utf-8'), str(binascii.hexlify(byte5), 'utf-8'), str(binascii.hexlify(byte6), 'utf-8'))
