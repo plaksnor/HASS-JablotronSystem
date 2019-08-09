@@ -2,7 +2,6 @@
 import logging
 import re
 import time
-#import voluptuous as vol
 import asyncio
 import threading
 
@@ -17,11 +16,9 @@ from homeassistant.core import callback
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.typing import ConfigType, HomeAssistantType
+from homeassistant.components import mqtt
 
 _LOGGER = logging.getLogger(__name__)
-
-DEFAULT_NAME = 'Jablotron Alarm'
-
 
 async def async_setup_platform(hass: HomeAssistantType, config: ConfigType, async_add_entities, discovery_info=None):
     async_add_entities([JablotronAlarm(hass, config)])
@@ -46,12 +43,23 @@ class JablotronAlarm(alarm.AlarmControlPanel):
         self._lock = threading.BoundedSemaphore()
         self._stop = threading.Event()
         self._data_flowing = threading.Event()
+    
+        """Setup the MQTT component, if the mqtt.publish service is available."""
+        self._mqtt_enabled = hass.services.has_service('mqtt', 'publish')
+        _LOGGER.debug("(__init__) MQTT enabled? %s", self._mqtt_enabled)
+        
+        if self._mqtt_enabled:
+          self._mqtt = hass.components.mqtt
+          self._state_topic = hass.data[DOMAIN]['state_topic']
+          self._command_topic = hass.data[DOMAIN]['command_topic']
 
         try:         
             hass.bus.async_listen('homeassistant_stop', self.shutdown_threads)
 
             from concurrent.futures import ThreadPoolExecutor
             self._io_pool_exc = ThreadPoolExecutor(max_workers=5)    
+            if self._mqtt_enabled:
+                self._mqtt_init_future = self._io_pool_exc.submit(self._mqtt_init)
             self._read_loop_future = self._io_pool_exc.submit(self._read_loop)
             self._watcher_loop_future = self._io_pool_exc.submit(self._watcher_loop)
             self._io_pool_exc.submit(self._startup_message)
@@ -60,13 +68,33 @@ class JablotronAlarm(alarm.AlarmControlPanel):
             _LOGGER.error('Unexpected error: %s', format(ex) )
 
 
+
+    def _mqtt_init(self):
+        """Subscribe to MQTT topic"""
+
+        _LOGGER.debug('(mqtt_init) subscribing to topic: %s', self._command_topic)
+        self._mqtt.subscribe(self._command_topic, self.message_received)
+        _LOGGER.debug('(mqtt_init) successfully subscribed to topic: %s', self._command_topic)
+
+
+    def message_received(self, msg):
+        """Handle new MQTT messages."""
+        """ If a MQTT message has been received, call service to arm or disarm alarm, without or with code if required. """
+
+        _alarm_state = msg.payload.lower()
+        _LOGGER.debug("(message_received) calling service: alarm_control_panel.alarm_%s", _alarm_state)
+
+        """ Todo: change 'jablotron_alarm' to proper entity_id based on self._name """
+        if (_alarm_state[0:3] == 'arm' and self._code_arm_required) or (_alarm_state[0:6] == 'disarm' and self._code_disarm_required):
+            self._hass.services.call("alarm_control_panel", "alarm_"+_alarm_state, {"entity_id":"alarm_control_panel.jablotron_alarm", "code":self._code})
+        else:
+            self._hass.services.call("alarm_control_panel", "alarm_"+_alarm_state, {"entity_id":"alarm_control_panel.jablotron_alarm"})
+
+
     def shutdown_threads(self, event):
-
-        _LOGGER.info('handle_shutdown() called' )
-
+        _LOGGER.debug('handle_shutdown() called' )
         self._stop.set()
-
-        _LOGGER.info('exiting handle_shutdown()' )
+        _LOGGER.debug('exiting handle_shutdown()' )
 
 #    @property
 #    def unique_id(self):
@@ -144,6 +172,16 @@ class JablotronAlarm(alarm.AlarmControlPanel):
                     _LOGGER.info("Jablotron state changed: %s to %s", self._state, new_state )
                     self._state = new_state
 
+                    if self._mqtt_enabled:
+                        # "arming" is not recognized as an MQTT alarm state, so we'll use "pending" instead.
+                        # https://www.home-assistant.io/components/alarm_control_panel.mqtt
+                        if new_state == "arming":
+                            new_state = "pending"
+
+                        # Send MQTT message with new state
+                        _LOGGER.info("Sending MQTT message with state '%s' to remote alarm_control_panel", new_state)
+                        self._mqtt.publish(self._state_topic, new_state, retain=True)
+
                     asyncio.run_coroutine_threadsafe(self._update(), self._hass.loop)
 #                else:
 #                    _LOGGER.info("ReadLoop: no state change")
@@ -161,7 +199,7 @@ class JablotronAlarm(alarm.AlarmControlPanel):
             _LOGGER.error('Unexpected error: %s', format(ex) )
 
         finally:
-            _LOGGER.info('exiting read_loop()' )
+            _LOGGER.debug('exiting read_loop()' )
 
     def _read(self):
 
@@ -225,9 +263,13 @@ class JablotronAlarm(alarm.AlarmControlPanel):
                     elif state != "Heartbeat?" and state !="Key Press":
                         break
 
-                elif packet[:2] == b'\x51\x22': # Jablotron JA-101
+                elif packet[:2] == b'\x51\x22' or packet[14:16] == b'\x51\x22': # Jablotron JA-100
                     self._model = 'Jablotron JA-100 Series'
-                    state = ja100codes.get(packet[2:3])
+
+                    if packet[:2] == b'\x51\x22':
+                        state = ja100codes.get(packet[2:3])
+                    elif packet[14:16] == b'\x51\x22':
+                        state = ja100codes.get(packet[16:17])
 
                     if state is None:
                         _LOGGER.info("Unknown status packet is x51 x22 %s", packet[2:3])
