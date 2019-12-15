@@ -12,6 +12,11 @@ from homeassistant.const import (
     CONF_CODE, CONF_DEVICE, CONF_NAME, CONF_VALUE_TEMPLATE,
     STATE_ALARM_ARMED_AWAY, STATE_ALARM_ARMED_HOME, STATE_ALARM_ARMED_NIGHT,
     STATE_ALARM_DISARMED, STATE_ALARM_PENDING, STATE_ALARM_ARMING, STATE_ALARM_TRIGGERED)
+from homeassistant.components.alarm_control_panel.const import (
+    SUPPORT_ALARM_ARM_AWAY,
+    SUPPORT_ALARM_ARM_HOME,
+    SUPPORT_ALARM_TRIGGER,
+    SUPPORT_ALARM_ARM_NIGHT)
 from homeassistant.core import callback
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -129,6 +134,11 @@ class JablotronAlarm(alarm.AlarmControlPanel):
         if isinstance(code, str) and re.search('^\\d+$', code):
             return alarm.FORMAT_NUMBER
         return alarm.FORMAT_TEXT
+    
+    @property
+    def supported_features(self) -> int:
+        """Return the list of supported features."""
+        return SUPPORT_ALARM_ARM_HOME | SUPPORT_ALARM_ARM_AWAY | SUPPORT_ALARM_TRIGGER | SUPPORT_ALARM_ARM_NIGHT
 
     async def _update_loop(self):
 
