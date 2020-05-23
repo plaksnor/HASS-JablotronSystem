@@ -1,50 +1,37 @@
 """Jablotron Sensor platform
-
  HA forum    : https://community.home-assistant.io/t/jablotron-ja-80-series-and-ja-100-series-alarm-integration/113315/
  Github repo : https://github.com/plaksnor/HASS-JablotronSystem
-
  The code contains 2 classes:
  - DeviceScanner() is scanning for packets with sensor data
  - JablotronSensor() is representing a binary_sensor object in HA
-
  The Jablotron data (for at least the JA-100 series) consists of two important type of packets which are getting send by the alarm system.
-
  -----------------------------------------------------------------------------------
  The packets starting with d8 08 seem to contain some kind of status report.
  These packets contain on/off data for 1 or more sensors
-
  For example:
   1  2  3  4  5  6  7  8   9 10 11 12 13 14 15 16  <====================== byte number
  d8 08 00 00 00 00 00 00  00 00 00 10 14 55 00 10  |.............U..|    : nothing is activated
  d8 08 00 00 01 00 00 00  00 00 55 09 00 88 00 02  |..........U.....|    : one or multiple devices has been activated
-
  byte number:
   4 and  5 = accumulated sensor ID's of devices which are ON. See hextobin() function for decoding. This data is not being used right now.
 ------------ the next bytes are not used, but already deciphered
  11 and 12 = if 55 09, a specific sensor recently caused this d8 packet
         14 = specific on/off status of a sensor which has changed state
  15 and 16 = specific sensor ID of sensor which has changed state
-
-
  -----------------------------------------------------------------------------------
  The packets starting with 55 09 also seem to contain sensor data, but they are only getting send when there has been send a d8 or 55 packet in the last 30 seconds.
  These packets contain on/off data for only 1 sensor, not multiple
-
  For example:
   1  2  3  4  5  6  7  8   9 10 11 12 13 14 15 16  <====================== byte number
  55 09 00 8a 00 02 40 cc  d2 3b 13 00 0b 00 00 00  |U.....@..;......|    : sensor 00 02 became inactive (8a)
  55 09 00 80 80 01 60 cc  f2 3b 14 00 14 55 00 10  |U.....`..;...U..|    : sensor 80 01 became active (80)
-
  byte number:
          4 = status (on/off) of device which has changed state
   5 and  6 = specific sensor ID of sensor which has changed state
-
  -----------------------------------------------------------------------------------
-
  Recent discoveries
  55 08 = wired    (unconfirmed)
  55 09 = wireless (unconfirmed)
-
 """
 
 import logging
@@ -62,7 +49,7 @@ from concurrent.futures import ThreadPoolExecutor
 from homeassistant.helpers.entity import Entity
 from homeassistant.components.binary_sensor import (
     PLATFORM_SCHEMA,
-    BinarySensorDevice,
+    BinarySensorEntity,
 )
 from homeassistant.const import (
     STATE_ON,
@@ -90,7 +77,7 @@ async def async_setup_platform(hass: HomeAssistantType, config: ConfigType, asyn
     data = DeviceScanner(hass, config, async_add_entities, devices)
 
 
-class JablotronSensor(BinarySensorDevice):
+class JablotronSensor(BinarySensorEntity):
     """Representation of a Sensor."""
 
     def __init__(self, hass: HomeAssistantType, dev_id: str):
@@ -101,44 +88,32 @@ class JablotronSensor(BinarySensorDevice):
         _LOGGER.debug('JablotronSensor.__init__(): dev_id created: %s', self.dev_id)
 
     @property
+    def is_on(self):
+        if self._state == STATE_OFF:
+            return False
+        elif self._state == STATE_ON:
+            return True
+
+    @property
+    def unique_id(self):
+        return self.dev_id
+
+    @property
     def name(self):
-        """Return the name of the sensor."""
-#        return self.name
         return self.dev_id
 
     @property
     def state(self):
-        """Return the state of the sensor."""
         return self._state
 
-    async def _update(self):
-        """Update state to HA"""
-        self.async_schedule_update_ha_state()
-        _LOGGER.debug('JablotronSensor._update(): sensor updated')
+    @property
+    def device_class(self):
+        return 'motion'
 
     async def async_seen(self, state: str = None):
-        """Mark the device as seen."""
         if self._state != state:
             self._state = state
-
             _LOGGER.debug('JablotronSensor.async_seen(): state updated to %s', state)
-#            await self._update()
-#            await self.async_update()
-
-#    async def async_update(self):
-#        """Update state of entity.
-#        This method is a coroutine.
-#        """
-##        self._state = STATE_OFF
-#        _LOGGER.info('async_update: updated')
-
-
-
-
-
-
-
-
 
 
 class DeviceScanner():
@@ -239,13 +214,12 @@ class DeviceScanner():
             if not self._data_flowing.wait(0.5):
                 self._triggersensorupdate()
             else:
-                time.sleep(15)
+                time.sleep(10)
 
     def _read_loop(self):
         """Read incoming data"""
         try:
             while not self._stop.is_set():
-
                 self._f = open(self._file_path, 'rb', 64)
                 new_state = self._read()
 
@@ -266,8 +240,6 @@ class DeviceScanner():
         binstring = binstring.zfill(32)
         revstring = binstring [::-1]
         return revstring
-
-
 
     async def async_see(self, dev_id: str = None, state: str = None):
         """Create binary sensor.
@@ -302,7 +274,6 @@ class DeviceScanner():
 #        _LOGGER.info("async_see: nu gaan we async_update_ha_state aanroepen")
 #        if device.track:
 #        await device.async_update_ha_state()
-
 
     async def async_update_config(self, path, dev_id, device):
         """Add device to YAML configuration file.
@@ -391,11 +362,11 @@ class DeviceScanner():
                     byte6 = packetpart[5:6]  # 6th byte, second part of device ID
 
                     """Only process specific state changes"""
-                    if byte3 in (b'\x00', b'\x01'):
-#                        if byte4 in (b'\x6d', b'\x75', b'\x79', b'\x7d', b'\x88', b'\x80'):
+                    if byte3 in (b'\x00', b'\x01', b'\x81'):
+                        #                        if byte4 in (b'\x6d', b'\x75', b'\x79', b'\x7d', b'\x88', b'\x80'):
                         # 6d, 75, 79, 7d, 88 and 80 are statusses for wireless sensors
                         # 8c and 84 are ON statusses for wired sensors
-                        if byte4 in (b'\x6d', b'\x75', b'\x79', b'\x7d', b'\x80', b'\x84', b'\x88', b'\x8c'):
+                        if byte4 in (b'\x6d', b'\x75', b'\x79', b'\x7d', b'\x8d', b'\x80', b'\x84', b'\x88', b'\x8c', b'\x89', b'\x85', b'\x81', b'\x91'):
                             _device_state = STATE_ON
                         else:
                             _device_state = STATE_OFF
@@ -461,15 +432,17 @@ class DeviceScanner():
         self._sendPacket(self._activation_packet)
         self._sendPacket(b'\x52\x02\x13\x05\x9a')
 
+        # Sending OFF signal
+        for dev_id, device in self.devices.items():
+            self._hass.add_job(
+                self.async_see(dev_id, STATE_OFF)
+            )
+
     def _keepalive(self):
         """ Send keepalive to system"""
 
         _LOGGER.debug('PortScanner._triggersensorupdate(): Send packet 52 01 02')
         self._sendPacket(b'\x52\x01\x02')
-
-
-
-
 
 
 async def async_load_config(path: str, hass: HomeAssistantType, config: ConfigType, async_add_entities):
@@ -504,7 +477,6 @@ async def async_load_config(path: str, hass: HomeAssistantType, config: ConfigTy
     except FileNotFoundError as err:
         _LOGGER.debug("async_load_config(): file %s could not be found: %s", path, str(err))
         return []
-
 
     for dev_id, device in devices.items():
         # Deprecated option. We just ignore it to avoid breaking change
